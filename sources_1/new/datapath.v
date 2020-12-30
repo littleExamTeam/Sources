@@ -70,7 +70,7 @@ wire [27:0] ExJumpAddr;
 wire [31:0] DataAD, DataBD;
 wire [31:0] CmpA, CmpB;
 wire [31:0] EqualD;
-wire  [4:0] RsD, RtD, RdD;
+wire [4:0] RsD, RtD, RdD;
 wire [1:0] ForwardAD, ForwardBD;
 wire StallD, FlushD;
 //-------------------------------------------------------
@@ -104,6 +104,9 @@ wire [31:0] SaE;
 wire HIWriteE, LOWriteE;
 wire [31:0] HIDataE;
 wire [31:0] LODataE;
+wire [31:0] NewHIDataE;
+wire [31:0] NewLODataE;
+wire [1:0] ForwardHIE, ForwardLOE;
 //------------------------
 wire  [4:0] RsE, RtE, RdE;
 wire  [4:0] WriteRegE;
@@ -163,7 +166,7 @@ assign Funct = InstD[5:0];
 assign SaD = {27'b0, InstD[10:6]};
 //---------------------
 //add datamove inst oprand
-assign HILOwe = HIWriteW | LOWriteW;
+//assign HILOwe = HIWriteW | LOWriteW;
 //------------------------
 
 assign PCSrcD[0:0] = BranchD & EqualD;
@@ -178,10 +181,10 @@ regfile rf(clk, RegWriteW, RsD, RtD, WriteRegW, ResultW, DataAD, DataBD);
 
 //add movedata inst oprand
 mux2 #(32)HIsel(HIDataW, ResultW ,HIWriteW, HIIn);
-mux2 #(32)LOsel(LODataW, ResultW ,LOWriteW, LOIn);//这里如果都为0，那么就选择result，普通指令也会选择result
-//TODO:做数据前推
+mux2 #(32)LOsel(LODataW, ResultW ,LOWriteW, LOIn);//这里如果都为0，那么就选择result，普通指令也会�?�择result
+//TODO:做数据前�?
 
-hiloreg hilo(clk, rst, HILOwe, HIIn, LOIn, HIDataD, LODataD);
+hiloreg hilo(clk, rst, HIWriteW, LOWriteW, HIIn, LOIn, HIDataD, LODataD);
 //------------------------
 mux2 #(32)DAmux(DataAD, ALUOutM, ForwardAD, CmpA);
 mux2 #(32)DBmux(DataBD, ALUOutM, ForwardBD, CmpB);
@@ -230,7 +233,10 @@ mux2 #(32) alusrcamux(RegValue, SaE, ALUSrcAE,SrcAE);
 //add logic inst oprand
 mux3 #(32) alusrcbmux(WriteDataE, SignImmE, ZeroImmE, ALUSrcBE, SrcBE);
 //---------------------
-
+//datamove inst hazardmux
+mux3 #(32) forwardHImux(HIDataE, ALUOutM, ResultW, ForwardHIE, NewHIDataE);
+mux3 #(32) forwardLOmux(LODataE, ALUOutM, ResultW, ForwardLOE, NewLODataE);
+//-----------------------
 alu alu(ALUControlE, SrcAE, SrcBE, ALUOutE);
 //-----------------------------------------------------------
 
@@ -243,8 +249,8 @@ flopr #(32)M2(clk, rst, ALUOutE, ALUOutM);
 flopr #(32)M3(clk, rst, WriteDataE, WriteDataM);
 flopr  #(5)M4(clk, rst, WriteRegE, WriteRegM);
 //add datamove inst oprand
-flopr #(32)M5(clk, rst, HIDataE, HIDataM);
-flopr #(32)M6(clk, rst, LODataE, LODataM);
+flopr #(32)M5(clk, rst, NewHIDataE, HIDataM);
+flopr #(32)M6(clk, rst, NewLODataE, LODataM);
 //------------------------
 //------------------------------------------------------------
 
@@ -284,10 +290,12 @@ hazard h(
 
     FlushE,
     ForwardAE, ForwardBE,
+    ForwardHIE, ForwardLOE,
     //mem stage
     WriteRegM,
     MemtoRegM,
     RegWriteM,
+    HIWriteM, LOWriteM,
     //writeback stage
     WriteRegW,
     RegWriteW
